@@ -1,6 +1,5 @@
 streamlit
 pydub
-imageio-ffmpeg
 numpy
 scipy
-matplotlib
+ffmpeg-python
