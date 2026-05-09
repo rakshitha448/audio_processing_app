@@ -1,67 +1,48 @@
-import os
-os.environ["PATH"] += os.pathsep + "/usr/bin"
 import streamlit as st
-from pydub import AudioSegment
-import imageio_ffmpeg
-import tempfile
 import numpy as np
-from scipy.fft import fft, ifft
+from scipy.io import wavfile
+import tempfile
 
-# Fix FFmpeg
-AudioSegment.converter = imageio_ffmpeg.get_ffmpeg_exe()
+st.title("Audio Frequency Processor")
 
-st.title("🎵 Audio Processing App")
-
-# Upload
 uploaded_file = st.file_uploader("Upload WAV file", type=["wav"])
 
 if uploaded_file is not None:
-    st.success("File uploaded successfully!")
+    # Save file temporarily
+    temp_file = tempfile.NamedTemporaryFile(delete=False)
+    temp_file.write(uploaded_file.read())
 
-    # Save temp file
-    with tempfile.NamedTemporaryFile(delete=False) as temp_file:
-        temp_file.write(uploaded_file.read())
-        temp_path = temp_file.name
+    # Read audio
+    rate, data = wavfile.read(temp_file.name)
 
-    # Load audio
-    audio = AudioSegment.from_file(temp_path, format="wav")
+    st.write("Sample Rate:", rate)
 
-    st.subheader("Original Audio")
-    st.audio(uploaded_file)
-
-    # Convert to numpy
-    samples = np.array(audio.get_array_of_samples())
+    # Convert to mono if stereo
+    if len(data.shape) > 1:
+        data = data.mean(axis=1)
 
     # FFT
-    fft_data = fft(samples)
-    freqs = np.fft.fftfreq(len(fft_data), d=1/audio.frame_rate)
+    fft_data = np.fft.fft(data)
+    freqs = np.fft.fftfreq(len(fft_data), 1/rate)
 
-    # Controls
-    target_freq = st.slider("Select Frequency (Hz)", 100, 5000, 1000)
-    gain = st.slider("Gain (-10 to 10)", -10, 10, 0)
+    # Frequency control
+    low = st.slider("Low Frequency", 0, 20000, 300)
+    high = st.slider("High Frequency", 0, 20000, 3000)
+    gain = st.slider("Gain", 0.0, 3.0, 1.0)
 
-    # Modify frequency
+    # Apply filter
     for i in range(len(freqs)):
-        if abs(freqs[i] - target_freq) < 100:
-            fft_data[i] *= (1 + gain)
+        if low < abs(freqs[i]) < high:
+            fft_data[i] *= gain
 
     # Inverse FFT
-    processed_samples = np.real(ifft(fft_data))
+    new_audio = np.fft.ifft(fft_data).real
 
-    # Convert back to audio
-    processed_audio = audio._spawn(processed_samples.astype(np.int16).tobytes())
+    # Normalize
+    new_audio = np.int16(new_audio / np.max(np.abs(new_audio)) * 32767)
 
     # Save output
-    output_path = temp_path + "_processed.wav"
-    processed_audio.export(output_path, format="wav")
+    output_file = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
+    wavfile.write(output_file.name, rate, new_audio)
 
-    st.subheader("Processed Audio")
-    st.audio(output_path)
-
-    # Download
-    with open(output_path, "rb") as f:
-        st.download_button(
-            "Download Processed Audio",
-            f,
-            file_name="processed.wav"
-        )
+    st.audio(output_file.name)
