@@ -1,3 +1,5 @@
+import os
+os.environ["PATH"] += os.pathsep + "/usr/bin"
 import streamlit as st
 from pydub import AudioSegment
 import imageio_ffmpeg
